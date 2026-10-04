@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>原生定时助手</title><link rel="stylesheet" href="app.css"></head>
+<body><main>
+<header><span class="badge">微博 · X</span><h1>先存好，再关电脑</h1><p>使用已登录的网页，把正文和时间存到平台。无需 API 或后台定时器。</p></header>
+<section id="setup"><h2>准备时间表</h2><label for="texts">每条之间用单独一行 --- 分隔</label><textarea id="texts" rows="8" placeholder="第一条文案&#10;---&#10;第二条文案"></textarea>
+<div class="fields"><label>开始时间（北京时间）<input id="start" type="datetime-local" required></label><label>间隔（分钟）<input id="interval" type="number" min="1" value="25"></label></div>
+<div class="fields"><label><input id="x" type="checkbox" checked> X</label><label><input id="weibo" type="checkbox" checked> 微博</label></div>
+<button id="plan">生成并保存计划</button><p class="hint">两个平台使用同一文案、同一时间。计划保存在这台浏览器，不会自动发布。</p></section>
+<section><div class="heading"><h2>逐条存入平台</h2><button id="export" class="secondary">导出记录</button></div>
+<p>首次打开后请在平台页确认账号。保持助手页打开，直到所有帖子存好。</p>
+<div class="fields"><button id="openX" class="secondary">打开 X</button><button id="openWeibo" class="secondary">打开微博定时页</button><button id="refresh" class="secondary">刷新网页列表</button></div>
+<label>操作的网页 / 框架<select id="target"></select></label><p class="hint">微博创作者中心可能有嵌入页面，请选显示定时编辑器的框架。</p>
+<div id="jobs"></div>
+<article id="current" hidden><div id="currentText"></div><p id="currentTime"></p>
+<label id="accountLabel">我已在平台页确认账号（输入账号名）<input id="account" autocomplete="off" placeholder="如 @用户名 或微博昵称"></label>
+<div class="fields"><button id="prepare">1. 填写原生编辑器</button><button id="submit">2. 核对后保存到平台</button><button id="list" class="secondary">3. 打开待发布列表</button></div>
+<p class="hint">保存前检查网页里的正文、年月日、时分和时区。控件变化时会停止，不会改用立即发送。</p>
+<label><input id="checked" type="checkbox"> 我在平台待发布列表中看到了这条完整正文，且日期、时间与计划一致</label>
+<div class="fields"><button id="verify">记录已核验</button><button id="reset" class="secondary">确认平台未保存，重新填写</button></div>
+<p class="hint">“结果待核对”不能直接重试。先查待发布与已发布列表，再判断是否需要重新填写。</p></article>
+<p id="notice" role="status" aria-live="polite"></p>
+<p class="hint">核验是人工核对记录，不代表扩展已自动读取服务器结果。全部核对完成后才能关闭电脑。关闭助手、断电或报错不会取消平台已保存的任务。</p>
+</section><footer>初版支持文字帖。图片、视频、长文、会员额度和验证码请在平台处理。没有登录凭据收集、远程服务或统计追踪。</footer>
+</main><script type="module" src="app.js"></script></body></html>
