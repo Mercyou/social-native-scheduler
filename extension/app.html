@@ -2,18 +2,21 @@
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>原生定时助手</title><link rel="stylesheet" href="app.css"></head>
 <body><main>
 <header><span class="badge">微博 · X</span><h1>先存好，再关电脑</h1><p>使用已登录的网页，把正文和时间存到平台。无需 API 或后台定时器。</p></header>
-<section id="setup"><h2>准备时间表</h2><label for="texts">每条之间用单独一行 --- 分隔</label><textarea id="texts" rows="8" placeholder="第一条文案&#10;---&#10;第二条文案"></textarea>
+<section id="setup"><h2>准备时间表</h2><label for="texts">每条之间连续按两次回车，留一行空白；单次回车保留在同一条文案内</label><textarea id="texts" rows="8" placeholder="第一条文案&#10;&#10;第二条文案"></textarea>
 <div class="fields"><label>开始时间（北京时间）<input id="start" type="datetime-local" required></label><label>间隔（分钟）<input id="interval" type="number" min="1" value="25"></label></div>
 <div class="fields"><label><input id="x" type="checkbox" checked> X</label><label><input id="weibo" type="checkbox" checked> 微博</label></div>
-<button id="plan">生成并保存计划</button><p class="hint">两个平台使用同一文案、同一时间。计划保存在这台浏览器，不会自动发布。</p></section>
-<section><div class="heading"><h2>逐条存入平台</h2><button id="export" class="secondary">导出记录</button></div>
+<button id="plan">1. 导入全部文案并生成时间表</button><p class="hint">两个平台使用同一文案、同一时间。计划保存在这台浏览器，不会自动发布。</p></section>
+<section><div class="heading"><h2>整批存入平台</h2><button id="export" class="secondary">导出记录</button></div>
 <p>首次打开后请在平台页确认账号。保持助手页打开，直到所有帖子存好。</p>
 <div class="fields"><button id="openX" class="secondary">打开 X</button><button id="openWeibo" class="secondary">打开微博定时页</button><button id="refresh" class="secondary">刷新网页列表</button></div>
-<label>操作的网页 / 框架<select id="target"></select></label><p class="hint">微博创作者中心可能有嵌入页面，请选显示定时编辑器的框架。</p>
+<label>已登录账号 / 页面<select id="target"></select></label><p class="hint">登录后刷新即可选择。微博创作者中心可能有嵌入页面，请选带有编辑器的账号项。</p>
+<div class="fields"><button id="batch">2. 一次性导入全部到平台</button><button id="checkAll" class="secondary">3. 启动检查</button></div>
+<p class="hint">只处理尚未导入的条目，自动依次保存。遇到报错或结果不明会停止；完成后统一检查平台列表。</p>
+<article id="batchReview" hidden><h2>本批核对清单</h2><div id="reviewRows"></div><label><input id="allChecked" type="checkbox"> 我已在平台列表核对以下全部条目的正文、日期和时间，均与清单一致</label><button id="verifyAll">记录整批已核对</button></article>
 <div id="jobs"></div>
 <article id="current" hidden><div id="currentText"></div><p id="currentTime"></p>
-<label id="accountLabel">我已在平台页确认账号（输入账号名）<input id="account" autocomplete="off" placeholder="如 @用户名 或微博昵称"></label>
-<div class="fields"><button id="prepare">1. 填写原生编辑器</button><button id="submit">2. 核对后保存到平台</button><button id="list" class="secondary">3. 打开待发布列表</button></div>
+<div class="fields"><button id="sync">直接同步此条到所选平台</button><button id="list" class="secondary">打开待发布列表</button></div>
+<details><summary>分步操作</summary><div class="fields"><button id="prepare">填写原生编辑器</button><button id="submit">保存到平台</button></div></details>
 <p class="hint">保存前检查网页里的正文、年月日、时分和时区。控件变化时会停止，不会改用立即发送。</p>
 <label><input id="checked" type="checkbox"> 我在平台待发布列表中看到了这条完整正文，且日期、时间与计划一致</label>
 <div class="fields"><button id="verify">记录已核验</button><button id="reset" class="secondary">确认平台未保存，重新填写</button></div>

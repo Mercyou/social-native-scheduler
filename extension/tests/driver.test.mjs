@@ -5,17 +5,38 @@ function fixture({text='测试正文',button='Schedule',proof='Jan 1, 2030, 12:0
   let clicked=0;
   const el=data=>({...data,getClientRects:()=>[{}],getAttribute:()=>null});
   const elements={
-    '[role=dialog] [data-testid=tweetTextarea_0]':el({isContentEditable:true,innerText:text}),
-    '[role=dialog] [data-testid=scheduledTweetIndicator]':el({innerText:proof}),
-    '[role=dialog] [data-testid=tweetButton]':el({innerText:button,click:()=>clicked++})
+    '[data-testid=tweetTextarea_0]':el({isContentEditable:true,innerText:text}),
+    '[data-testid=scheduledTweetIndicator]':el({innerText:proof}),
+    '[data-testid=tweetButton], [data-testid=tweetButtonInline]':el({innerText:button,click:()=>clicked++})
   };
-  globalThis.document={querySelectorAll:selector=>elements[selector]?[elements[selector]]:[]};
+  globalThis.document={querySelector:()=>null,querySelectorAll:selector=>elements[selector]?[elements[selector]]:[]};
   globalThis.location={hostname:host};globalThis.getComputedStyle=()=>({visibility:'visible'});
   return ()=>clicked;
 }
 const job={platform:'x',text:'测试正文',at:'2030-01-01T12:00:00+08:00',proof:'Jan 1, 2030, 12:00 PM'};
+test('page discovery works without a posting job or date',async()=>{
+  fixture();document.title='X';location.href='https://x.com/home';
+  const result=await drivePage('describe',{});
+  assert.equal(result.url,'https://x.com/home');assert.equal(result.title,'X');
+});
+test('discovery reads only the signed-in X switcher, not another user profile',async()=>{
+  fixture();globalThis.window={};document.title='X';location.href='https://x.com/home';
+  document.querySelector=()=>({getClientRects:()=>[{}],innerText:'User\n@TestUser'});
+  const result=await drivePage('describe',{});assert.equal(result.account.id,'@testuser');
+});
+test('Weibo identity uses logged-in account configuration and rejects absent identity',async()=>{
+  fixture({host:'weibo.com'});globalThis.window={$CONFIG:{uid:12345}};
+  document.title='微博';location.href='https://weibo.com';
+  assert.equal((await drivePage('describe',{})).account.id,'12345');
+  window.$CONFIG={uid:0};assert.equal((await drivePage('describe',{})).account,null);
+});
 test('scheduled submit clicks once after matching text and unchanged schedule proof',async()=>{
   const count=fixture();const result=await drivePage('submit',job);assert.equal(count(),1);assert.match(result.message,/核对/);
+});
+test('extension transport reports concrete errors instead of an empty result',async()=>{
+  const count=fixture({text:'最后一句'});
+  const result=await drivePage('submit',{...job,transportResult:true});
+  assert.match(result.error,/正文与计划不一致/);assert.equal(count(),0);
 });
 test('never use immediate Post button, wrong text, changed time, wrong host or expired time',async()=>{
   for(const [setup,change] of [[{button:'Post'},{}],[{text:'别的草稿'},{}],[{proof:'Changed'},{}],[{host:'example.com'},{}],[{}, {at:'2000-01-01T12:00:00+08:00'}],[{}, {proof:null}]]){
@@ -23,12 +44,12 @@ test('never use immediate Post button, wrong text, changed time, wrong host or e
   }
 });
 test('ambiguous submit buttons stop without clicking',async()=>{
-  const count=fixture();const original=document.querySelectorAll;document.querySelectorAll=s=>s.endsWith('tweetButton]')?[...original(s),...original(s)]:original(s);
+  const count=fixture();const original=document.querySelectorAll;document.querySelectorAll=s=>s.includes('tweetButton]')?[...original(s),...original(s)]:original(s);
   await assert.rejects(()=>drivePage('submit',job));assert.equal(count(),0);
 });
 test('Weibo requires unchanged date and matching time before its exact Send button',async()=>{
   let clicked=0;
-  globalThis.location={hostname:'me.weibo.com'};globalThis.getComputedStyle=()=>({visibility:'visible'});
+  globalThis.location={hostname:'weibo.com',pathname:'/manage/schedule'};globalThis.getComputedStyle=()=>({visibility:'visible'});
   const el=data=>({...data,getClientRects:()=>[{}],getAttribute:()=>null});
   const date=el({value:'01/01/2030'}),editor=el({value:'测试正文'});
   const menu=n=>el({querySelector:()=>({innerText:String(n)})});

@@ -1,3 +1,6 @@
+export function splitTexts(value) {
+  return value.replace(/\r\n?/g,'\n').split(/\n[ \t]*\n(?:[ \t]*\n)*/).map(text=>text.trim()).filter(Boolean);
+}
 export function createPlan({texts, platforms, start, intervalMinutes}, now = Date.now()) {
   if (!Array.isArray(texts) || !texts.length || texts.some(t => typeof t !== 'string' || !t.trim())) throw new Error('请填写至少一条文案');
   texts = texts.map(t => t.trim());
