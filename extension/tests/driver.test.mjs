@@ -59,3 +59,23 @@ test('Weibo requires unchanged date and matching time before its exact Send butt
   await drivePage('submit',{...job,platform:'weibo',proof:date.value});assert.equal(clicked,1);
   date.value='01/02/2030';await assert.rejects(()=>drivePage('submit',{...job,platform:'weibo',proof:'01/01/2030'}));assert.equal(clicked,1);
 });
+test('explicit Weibo scheduling limits return typed errors before any send',async()=>{
+  for(const [text,code] of [['今日定时发布次数已用完','schedule_limit'],['定时发布需要开通会员','schedule_permission']]){
+    fixture({host:'weibo.com'});location.pathname='/manage/schedule';
+    document.querySelectorAll=selector=>selector.startsWith('[role=alert]')?[{innerText:text,getClientRects:()=>[{}]}]:[];
+    const result=await drivePage('prepare',{...job,platform:'weibo',transportResult:true});
+    assert.equal(result.code,code);assert.equal(result.notSubmitted,true);
+    const afterSubmit=await drivePage('waitSaved',{...job,platform:'weibo',transportResult:true});
+    assert.equal(afterSubmit.notSubmitted,false);
+  }
+});
+test('hidden quota feedback and quota words in post text are not platform failures',async()=>{
+  let clicks=0;
+  fixture({host:'weibo.com'});location.pathname='/manage/schedule';
+  const feedback='今日定时发布次数已用完';
+  const el=data=>({...data,getClientRects:()=>[{}],getAttribute:()=>null});
+  const elements={textarea:[el({value:feedback})],input:[el({value:'01/01/2030'})],'.multiselect':[el({querySelector:()=>({innerText:'12'})}),el({querySelector:()=>({innerText:'0'})})],button:[el({innerText:'发送',click:()=>clicks++})]};
+  document.querySelectorAll=s=>s.startsWith('[role=alert]')?[{innerText:feedback,getClientRects:()=>[]},{innerText:feedback,getClientRects:()=>[{}]}]:elements[s]||[];
+  const result=await drivePage('submit',{...job,text:feedback,platform:'weibo',proof:'01/01/2030',transportResult:true});
+  assert.equal(result.error,undefined);assert.equal(clicks,1);
+});

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "微博 / X 原生定时助手",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "批量生成时间表，填写平台原生定时编辑器，逐条核对保存结果。无需付费 API。",
   "minimum_chrome_version": "102",
   "permissions": ["storage", "scripting"],

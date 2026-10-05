@@ -11,7 +11,7 @@
 <div class="fields"><button id="openX" class="secondary">打开 X</button><button id="openWeibo" class="secondary">打开微博定时页</button><button id="refresh" class="secondary">刷新网页列表</button></div>
 <label>已登录账号 / 页面<select id="target"></select></label><p class="hint">登录后刷新即可选择。微博创作者中心可能有嵌入页面，请选带有编辑器的账号项。</p>
 <div class="fields"><button id="batch">2. 一次性导入全部到平台</button><button id="checkAll" class="secondary">3. 启动检查</button></div>
-<p class="hint">只处理尚未导入的条目，自动依次保存。遇到报错或结果不明会停止；完成后统一检查平台列表。</p>
+<p class="hint">只处理尚未导入的条目。一个平台报错时，另一个平台继续；明确遇到额度或权限限制时，本批剩余的该平台任务自动跳过。结果不明的保留待检查。</p>
 <article id="batchReview" hidden><h2>本批核对清单</h2><div id="reviewRows"></div><label><input id="allChecked" type="checkbox"> 我已在平台列表核对以下全部条目的正文、日期和时间，均与清单一致</label><button id="verifyAll">记录整批已核对</button></article>
 <div id="jobs"></div>
 <article id="current" hidden><div id="currentText"></div><p id="currentTime"></p>
@@ -20,6 +20,7 @@
 <p class="hint">保存前检查网页里的正文、年月日、时分和时区。控件变化时会停止，不会改用立即发送。</p>
 <label><input id="checked" type="checkbox"> 我在平台待发布列表中看到了这条完整正文，且日期、时间与计划一致</label>
 <div class="fields"><button id="verify">记录已核验</button><button id="reset" class="secondary">确认平台未保存，重新填写</button></div>
+<button id="skip" class="secondary">跳过此条，继续下一条</button><p id="jobError" class="hint"></p>
 <p class="hint">“结果待核对”不能直接重试。先查待发布与已发布列表，再判断是否需要重新填写。</p></article>
 <p id="notice" role="status" aria-live="polite"></p>
 <p class="hint">核验是人工核对记录，不代表扩展已自动读取服务器结果。全部核对完成后才能关闭电脑。关闭助手、断电或报错不会取消平台已保存的任务。</p>

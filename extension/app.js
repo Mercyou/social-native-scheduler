@@ -1,19 +1,20 @@
 import {createPlan,splitTexts,statusLabels,canPrepare,canSubmit} from './planner.js';
 import {drivePage} from './page-driver.js';
 import {withTimeout} from './timeout.js';
-import {pendingBatch,runSequential} from './batch.js';
+import {pendingBatch,runPlatformBatch,skipJob,isPlatformLimit} from './batch.js';
 const $ = id => document.getElementById(id);
 let jobs=[], selected=null, busy=false;
 const targets=new Map();
 const key='nativeSchedulerV1';
 const notice = text => { $('notice').textContent=text; };
 const current = () => jobs.find(j=>j.id===selected);
+const needsReview=j=>['needs_review','submitting'].includes(j.status)||j.needsResultCheck;
 async function persist(){await chrome.storage.local.set({[key]:jobs});}
 function render(){
   $('jobs').replaceChildren();
-  for(const job of jobs){const b=document.createElement('button');b.className='job'+(selected===job.id?' selected':'')+(job.status==='verified'?' verified':'');b.disabled=busy;b.textContent=`${job.sequence} · ${job.platform==='x'?'X':'微博'} · ${job.at.slice(5,16).replace('T',' ')}   ${statusLabels[job.status]||job.status}`;b.onclick=()=>{selected=job.id;$('checked').checked=false;render();};$('jobs').append(b);}
+  for(const job of jobs){const b=document.createElement('button');b.className='job'+(selected===job.id?' selected':'')+(job.status==='verified'?' verified':'');b.disabled=busy;b.textContent=`${job.sequence} · ${job.platform==='x'?'X':'微博'} · ${job.at.slice(5,16).replace('T',' ')}   ${job.needsResultCheck?'已跳过 / 结果待核对':statusLabels[job.status]||job.status}`;b.onclick=()=>{selected=job.id;$('checked').checked=false;render();};$('jobs').append(b);}
   const j=current();$('current').hidden=!j;
-  if(j){$('currentText').textContent=j.text;$('currentTime').textContent=j.at.replace('T',' ').replace(':00+08:00','')+' · 北京时间';$('prepare').disabled=busy||!canPrepare(j);$('submit').disabled=busy||!canSubmit(j);$('sync').disabled=busy||!canPrepare(j);$('verify').disabled=busy||!['submitting','needs_review'].includes(j.status);$('reset').disabled=busy||j.status==='verified';}
+  if(j){$('currentText').textContent=j.text;$('currentTime').textContent=j.at.replace('T',' ').replace(':00+08:00','')+' · 北京时间';$('prepare').disabled=busy||!canPrepare(j);$('submit').disabled=busy||!canSubmit(j);$('sync').disabled=busy||!canPrepare(j);$('verify').disabled=busy||!needsReview(j);$('reset').disabled=busy||j.status==='verified';$('skip').disabled=busy||['skipped','verified'].includes(j.status);$('jobError').textContent=j.skipReason||j.lastError||'';}
   for(const id of ['plan','refresh','openX','openWeibo','list','export','batch','checkAll','verifyAll'])$(id).disabled=busy;
   if(jobs.length&&jobs.every(j=>j.status==='verified'))notice('全部条目均已由你在平台列表核对。已保存的任务由平台发送，可以关闭电脑。');
 }
@@ -21,7 +22,7 @@ async function exclusive(fn){if(busy)return;await navigator.locks.request('nativ
   if(!lock){notice('另一个助手窗口正在操作，请稍后再试');return;}
   const fresh=await chrome.storage.local.get(key);jobs=Array.isArray(fresh[key])?fresh[key]:jobs;
   busy=true;render();
-  try{await fn();}catch(e){notice(e.message);}finally{busy=false;render();}
+  try{await fn();}catch(e){const j=current();if(j&&['preparing','prepared','submitting'].includes(j.status)){j.lastError=e.message;j.errorCode=e.code||'';if(isPlatformLimit(e)&&e.notSubmitted){skipJob(j,e.message);j.needsResultCheck=false;}await persist();}notice(e.message);}finally{busy=false;render();}
 });}
 async function refreshTargets(){
   const previous=$('target').value;$('target').replaceChildren();targets.clear();
@@ -66,12 +67,12 @@ async function drive(action,j,t){
   const operationJob={...j,transportResult:true,operationDeadline:Date.now()+14000};
   const result=await withTimeout(chrome.scripting.executeScript({target:{tabId:t.tabId,frameIds:[t.frameId]},world:'MAIN',func:drivePage,args:[action,operationJob]}));
   if(!result[0]?.result)throw new Error(result[0]?.error?.message||'网页操作没有返回结果，请检查平台页面');
-  if(result[0].result.error)throw new Error(result[0].result.error);
+  if(result[0].result.error)throw Object.assign(new Error(result[0].result.error),{code:result[0].result.code,notSubmitted:result[0].result.notSubmitted});
   return result[0].result;
 }
 async function open(platform,list=false){const urls={x:list?'https://x.com/compose/post/unsent/scheduled':'https://x.com/home',weibo:'https://weibo.com/manage/schedule?type=0&hasnav=0'};if(platform==='weibo'&&!list)await chrome.tabs.create({url:'https://weibo.com',active:false});const tab=await chrome.tabs.create({url:urls[platform]});notice('登录后回助手刷新账号列表即可选择。');return tab;}
 $('plan').onclick=()=>exclusive(async()=>{
-  if(jobs.length&&jobs.some(j=>!['planned','verified'].includes(j.status)))throw new Error('旧计划仍有填写中或结果待核对条目，请先处理并导出记录');
+  if(jobs.length&&jobs.some(j=>!['planned','verified','skipped'].includes(j.status)||j.needsResultCheck))throw new Error('旧计划仍有填写中或结果待核对条目，请先处理并导出记录');
   if(jobs.length&&!confirm('用新计划替换本地清单？这不会取消平台已保存的帖子。请先导出旧记录。'))return;
   const next=createPlan({texts:splitTexts($('texts').value),platforms:['x','weibo'].filter(p=>$(p).checked),start:$('start').value,intervalMinutes:Number($('interval').value)});
   jobs=next;selected=jobs[0].id;await persist();notice(`生成 ${jobs.length} 条平台任务。尚未提交到平台。`);
@@ -80,18 +81,14 @@ $('refresh').onclick=()=>exclusive(refreshTargets);
 $('openX').onclick=()=>exclusive(()=>open('x'));
 $('openWeibo').onclick=()=>exclusive(()=>open('weibo'));
 async function syncGroup(group){
-  if(group.some(j=>j.platform==='weibo')&&![...targets.values()].some(info=>info.platform==='weibo'&&new URL(info.url).pathname==='/manage/schedule')){await chrome.tabs.create({url:'https://weibo.com/manage/schedule?type=0&hasnav=0'});await new Promise(resolve=>setTimeout(resolve,1500));await refreshTargets();}
-  // Resolve all destinations and identities before any submission.
-  const resolved=[];
-  for(const j of group){
+  const summary=await runPlatformBatch(group,async j=>{
+    if(j.platform==='weibo'&&![...targets.values()].some(info=>info.platform==='weibo'&&new URL(info.url).pathname==='/manage/schedule')){await chrome.tabs.create({url:'https://weibo.com/manage/schedule?type=0&hasnav=0'});await new Promise(resolve=>setTimeout(resolve,1500));await refreshTargets();}
     const options=[...$('target').options].filter(o=>targets.get(o.value)?.account?.platform===j.platform&&(j.platform!=='weibo'||new URL(targets.get(o.value).url).pathname==='/manage/schedule'));
     if(!options.length)throw new Error(`${j.platform} 未找到登录账号，请刷新账号列表`);
     const preferred=options.find(o=>o.value===$('target').value);
     if(!preferred&&new Set(options.map(o=>targets.get(o.value).account.id)).size!==1)throw new Error(`${j.platform} 有多个账号，请先选择目标账号`);
     const option=preferred||options.find(o=>/编辑器/.test(o.textContent))||options.find(o=>/定时|timer/i.test(o.textContent))||options[0];
-    $('target').value=option.value;const t=target(),account=await selectedAccount(j,t);resolved.push({j,t,account,option});
-  }
-  await runSequential(resolved,async({j,t,account,option})=>{
+    $('target').value=option.value;const t=target(),account=await selectedAccount(j,t);
     $('target').value=option.value;selected=j.id;notice(`正在同步到 ${account.label}：填写正文与时间…`);
     j.status='preparing';j.account=account.label;j.accountId=account.id;j.target=t;j.proof=null;await persist();
     const prepared=await drive('prepare',j,t);j.proof=prepared.proof;j.status='prepared';await persist();
@@ -99,8 +96,20 @@ async function syncGroup(group){
     j.status='submitting';j.attemptedAt=new Date().toISOString();await persist();notice(`正在同步到 ${account.label}：保存原生定时…`);
     await drive('submit',j,t);
     await drive('waitSaved',j,t);j.status='needs_review';await persist();
-  },(done,total)=>notice(`已导入 ${done}/${total} 条平台任务，结果待统一检查。`));
-  notice(`本批 ${resolved.length} 条已点击定时保存并退出编辑器。点击“启动检查”，核对平台列表。`);
+  },{
+    onError:async(j,error)=>{
+      j.lastError=error.message;j.errorCode=error.code||'';
+      if(isPlatformLimit(error)&&error.notSubmitted){skipJob(j,error.message);j.needsResultCheck=false;}
+      await persist();
+    },
+    onSkip:async(j,error)=>{
+      if(isPlatformLimit(error)){skipJob(j,`本批跳过：${error.message}`);await persist();}
+    },
+    progress:({done,failed,skipped,total})=>notice(`本批 ${total} 条：已点定时保存 ${done}，中断 ${failed}，跳过或暂缓 ${skipped}。`)
+  });
+  const next=jobs.find(j=>j.status==='planned'&&!summary.blockedPlatforms.includes(j.platform));
+  if(next)selected=next.id;
+  notice(`本批已点定时保存 ${summary.done} 条；中断 ${summary.failed} 条，跳过或暂缓 ${summary.skipped} 条。点击“启动检查”核对结果。额度或权限限制不会改成立即发送。`);
 }
 $('sync').onclick=()=>exclusive(async()=>{
   const chosen=current();if(!chosen)throw new Error('请选择一条任务');
@@ -114,7 +123,7 @@ $('batch').onclick=()=>exclusive(async()=>{
   await syncGroup(pending);
 });
 $('checkAll').onclick=()=>exclusive(async()=>{
-  const review=jobs.filter(j=>['needs_review','submitting'].includes(j.status));
+  const review=jobs.filter(needsReview);
   if(!review.length)throw new Error('还没有待检查的提交结果');
   for(const platform of new Set(review.map(j=>j.platform)))await open(platform,true);
   $('batchReview').hidden=false;$('allChecked').checked=false;
@@ -124,9 +133,9 @@ $('checkAll').onclick=()=>exclusive(async()=>{
 });
 $('verifyAll').onclick=()=>exclusive(async()=>{
   if(!$('allChecked').checked)throw new Error('先在平台列表核对本批全部条目，再勾选');
-  const review=jobs.filter(j=>['needs_review','submitting'].includes(j.status));
+  const review=jobs.filter(needsReview);
   if(!review.length)throw new Error('没有待核对条目');
-  for(const j of review){j.status='verified';j.verifiedAt=new Date().toISOString();j.verification='human-platform-list-batch';}
+  for(const j of review){j.status='verified';j.needsResultCheck=false;j.verifiedAt=new Date().toISOString();j.verification='human-platform-list-batch';}
   await persist();$('batchReview').hidden=true;notice(`已记录 ${review.length} 条的整批人工核对结果。`);
 });
 $('prepare').onclick=()=>exclusive(async()=>{
@@ -141,7 +150,14 @@ $('submit').onclick=()=>exclusive(async()=>{
   const r=await drive('submit',j,t);j.status='needs_review';await persist();notice(r.message);$('checked').checked=false;
 });
 $('list').onclick=()=>exclusive(async()=>{const j=current();if(!j)throw new Error('请选择条目');await open(j.platform,true);});
-$('verify').onclick=()=>exclusive(async()=>{const j=current();if(!j||!['submitting','needs_review'].includes(j.status)||!$('checked').checked)throw new Error('先在平台列表核对完整正文和日期时间，再勾选核对结果');j.status='verified';j.verifiedAt=new Date().toISOString();j.verification='human-platform-list';await persist();$('checked').checked=false;notice('已记录人工核对结果，可选择下一条。');});
-$('reset').onclick=()=>exclusive(async()=>{const j=current();if(!j||j.status==='verified')throw new Error('已核验条目不能在这里重新提交');if(!confirm('请先在待发布和已发布列表检查。确认平台没有保存这条帖子，才重置。继续？'))return;j.status='planned';j.proof=null;j.target=null;await persist();notice('已重置本地状态；没有删除或取消平台帖子。');});
+$('verify').onclick=()=>exclusive(async()=>{const j=current();if(!j||!needsReview(j)||!$('checked').checked)throw new Error('先在平台列表核对完整正文和日期时间，再勾选核对结果');j.status='verified';j.needsResultCheck=false;j.verifiedAt=new Date().toISOString();j.verification='human-platform-list';await persist();$('checked').checked=false;notice('已记录人工核对结果，可选择下一条。');});
+$('reset').onclick=()=>exclusive(async()=>{const j=current();if(!j||j.status==='verified')throw new Error('已核验条目不能在这里重新提交');if(!confirm('请先在待发布和已发布列表检查。确认平台没有保存这条帖子，才重置。继续？'))return;j.status='planned';j.proof=null;j.target=null;j.needsResultCheck=false;j.skipReason='';j.lastError='';j.errorCode='';await persist();notice('已重置本地状态；没有删除或取消平台帖子。');});
+$('skip').onclick=()=>exclusive(async()=>{
+  const j=current();skipJob(j,j.lastError||'用户跳过此条');await persist();
+  let pending=[];try{pending=pendingBatch(jobs);}catch{}
+  const index=jobs.indexOf(j);selected=pending.find(n=>jobs.indexOf(n)>index)?.id||pending[0]?.id||j.id;
+  $('checked').checked=false;
+  notice(j.needsResultCheck?'已跳过并保留结果待核对。可以继续其他平台；该平台需先检查保存结果。':'已跳过此条。点击“一次性导入全部到平台”继续剩余任务。');
+});
 $('export').onclick=()=>{const blob=new Blob([JSON.stringify({version:1,timezone:'Asia/Shanghai',jobs},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='native-schedule-record.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);};
 const data=await chrome.storage.local.get(key);jobs=Array.isArray(data[key])?data[key]:[];selected=jobs.find(j=>j.status!=='verified')?.id||jobs[0]?.id;const defaultTime=new Date(Date.now()+3600000+28800000).toISOString().slice(0,16);$('start').value=defaultTime;render();await refreshTargets();

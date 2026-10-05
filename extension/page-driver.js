@@ -1,8 +1,21 @@
 // This self-contained function runs in the selected page's MAIN world.
 // No credentials, page fetches, hidden APIs, or immediate-post fallbacks.
 export async function drivePage(action, job) {
+  let submissionAttempted=action==='waitSaved';
   try {
   const visible = e => !!e && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden';
+  const checkScheduleAccess=()=>{
+    if(job.platform!=='weibo')return;
+    const feedback=[...document.querySelectorAll('[role=alert],[role=dialog],.woo-modal-wrap,.woo-toast-main,.el-message,.el-dialog,.ant-message-notice,.ant-modal,.W_layer')].filter(visible);
+    for(const node of feedback){
+      let text=node.innerText||'';
+      for(const line of (job.text||'').split('\n').filter(Boolean))text=text.replaceAll(line,'');
+      const scheduling=/(定时|预约)/.test(text);
+      const quota=scheduling&&/(?:次数|额度|上限|限额)[\s\S]{0,30}(?:用完|不足|已满|达到|耗尽|超出|限制)|(?:用完|不足|已满|达到|耗尽|超出)[\s\S]{0,30}(?:次数|额度|上限|限额)|(?:每天|每日|当日|今日)[\s\S]{0,30}(?:只能|最多|仅能|限制)/.test(text);
+      const permission=scheduling&&/(?:仅限|仅对|需要|需开通|请开通|请升级)[\s\S]{0,20}(?:会员|VIP|权限)|非会员|暂无权限|无权限|没有权限|权限不足|会员专享/.test(text);
+      if(quota||permission)throw Object.assign(new Error(text.trim().slice(0,400)),{code:quota?'schedule_limit':'schedule_permission'});
+    }
+  };
   if (action==='describe') {
     let account=null;
     if(location.hostname==='x.com') {
@@ -16,7 +29,7 @@ export async function drivePage(action, job) {
     return {url:location.href,title:document.title,account,editor:!![...document.querySelectorAll('textarea,[contenteditable=true]')].find(visible)};
   }
   const one = (selector, scope=document) => {const els=[...scope.querySelectorAll(selector)].filter(visible); if(els.length!==1) throw new Error('网页控件不存在或不唯一：'+selector); return els[0];};
-  const wait = async fn => {for(let i=0;i<40;i++){const r=fn();if(r)return r;await new Promise(r=>setTimeout(r,150));}throw new Error('页面未准备好，请检查登录、弹窗和平台提示');};
+  const wait = async fn => {for(let i=0;i<40;i++){checkScheduleAccess();const r=fn();if(r)return r;await new Promise(r=>setTimeout(r,150));}throw new Error('页面未准备好，请检查登录、弹窗和平台提示');};
   const checkDeadline=()=>{if(job.operationDeadline&&Date.now()>job.operationDeadline)throw new Error('操作已超时，停止后续网页修改');};
   const click = e => {checkDeadline();if(!visible(e)||e.disabled||e.getAttribute('aria-disabled')==='true')throw new Error('控件不可用');e.click();};
   const normalize = text => text.replace(/\r\n/g,'\n').trim();
@@ -40,6 +53,7 @@ export async function drivePage(action, job) {
   const buttons = (text,scope=document) => [...scope.querySelectorAll('button')].filter(e=>visible(e)&&text.test(e.innerText.trim()));
   const uniqueButton = (re,scope) => {const matches=buttons(re,scope);if(matches.length!==1)throw new Error('没有唯一的定时控件：'+re);return matches[0];};
   if(Date.parse(job.at)<=Date.now()+60000) throw new Error('计划时间已过或距离发送不足一分钟，请修改计划');
+  checkScheduleAccess();
   if(action==='waitSaved'){
     await wait(()=>{
       const editors=[...document.querySelectorAll(job.platform==='x'?'[data-testid=tweetTextarea_0]':'textarea')].filter(visible);
@@ -77,7 +91,7 @@ export async function drivePage(action, job) {
       const editor=one('[data-testid=tweetTextarea_0]');if(read(editor)!==normalize(job.text))throw new Error('正文与计划不一致');
       if(!job.proof||one('[data-testid=scheduledTweetIndicator]').innerText!==job.proof)throw new Error('定时时间提示发生变化，请重新填写并核对');
       const b=one('[data-testid=tweetButton], [data-testid=tweetButtonInline]');if(!/^(Schedule|定时|定时发送|定时发布)$/.test(b.innerText.trim()))throw new Error('按钮不是定时保存，已停止');
-      click(b);return {message:'已点击定时保存。请在 X 待发布列表逐条核对正文和时间。'};
+      submissionAttempted=true;click(b);return {message:'已点击定时保存。请在 X 待发布列表逐条核对正文和时间。'};
     }
   } else {
     if(!/(^|\.)weibo\.com$/.test(location.hostname))throw new Error('请选择微博网页或定时页框架');
@@ -114,9 +128,9 @@ export async function drivePage(action, job) {
       if(read(getEditor())!==normalize(job.text))throw new Error('正文与计划不一致');
       if(!job.proof||![...document.querySelectorAll('input')].some(e=>visible(e)&&e.value===job.proof))throw new Error('日期发生变化，请重新填写并核对');
       const menus=[...document.querySelectorAll('.multiselect')].filter(visible);if(menus.length!==2||parseInt(menus[0].querySelector('.multiselect__single')?.innerText)!==hour||parseInt(menus[1].querySelector('.multiselect__single')?.innerText)!==minute)throw new Error('网页时间与计划不一致');
-      click(uniqueButton(/^发送$/));return {message:'已点击定时编辑器的发送。请在待发布列表核对正文和完整日期时间。'};
+      const send=uniqueButton(/^发送$/);checkScheduleAccess();submissionAttempted=true;click(send);return {message:'已点击定时编辑器的发送。请在待发布列表核对正文和完整日期时间。'};
     }
   }
   throw new Error('不支持的操作');
-  }catch(error){if(job?.transportResult)return {error:error.message};throw error;}
+  }catch(error){if(job?.transportResult)return {error:error.message,code:error.code||'',notSubmitted:!submissionAttempted};throw error;}
 }

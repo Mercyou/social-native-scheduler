@@ -13,6 +13,6 @@ export function createPlan({texts, platforms, start, intervalMinutes}, now = Dat
   if (!Number.isInteger(intervalMinutes) || intervalMinutes < 1 || intervalMinutes > 10080) throw new Error('间隔需为 1–10080 分钟的整数');
   return texts.flatMap((text, i) => platforms.map(platform => ({id: crypto.randomUUID(), sequence:i+1, platform, text, at:new Date(ms + i * intervalMinutes * 60000 + 28800000).toISOString().slice(0,19)+'+08:00', status:'planned', account:''})));
 }
-export const statusLabels = {planned:'未填写', preparing:'填写中断 / 需检查', prepared:'已填写', submitting:'结果待核对', needs_review:'已点保存 / 待核对', verified:'人工已核对'};
+export const statusLabels = {planned:'未填写', preparing:'填写中断 / 需检查', prepared:'已填写', submitting:'结果待核对', needs_review:'已点保存 / 待核对', verified:'人工已核对',skipped:'已跳过 / 未提交'};
 export function canPrepare(job) { return ['planned','prepared'].includes(job.status); }
 export function canSubmit(job) { return job.status === 'prepared'; }
